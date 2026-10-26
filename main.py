@@ -3,10 +3,13 @@ G.ONE: ESCAPE THE GRID
 A neon maze chase inspired by Ra.One. You are G.One. Ra.One hunts you with A* search.
 
 Run:  python main.py
+Web:  pygbag .   (builds a browser version)
 """
+import asyncio
 import json
 import math
 import random
+import sys
 
 import pygame
 
@@ -21,6 +24,8 @@ from settings import (BG, BOOT_TIME, CELL, COLS, CYAN, DIM, FIREWALL_CHARGES, FI
                       WALL_FILL, WHITE, WIDTH, YELLOW)
 from sound import Sfx
 from world import DIRS, World
+
+IS_WEB = sys.platform == "emscripten"
 
 KEY_DIRS = {
     pygame.K_UP: (0, -1), pygame.K_w: (0, -1),
@@ -57,6 +62,9 @@ def raone_speed(level):
 
 def load_high_score():
     try:
+        if IS_WEB:
+            import platform
+            return int(platform.window.localStorage.getItem("gone_high_score") or 0)
         return int(json.loads(HIGHSCORE_FILE.read_text())["high_score"])
     except Exception:
         return 0
@@ -64,8 +72,12 @@ def load_high_score():
 
 def save_high_score(value):
     try:
+        if IS_WEB:
+            import platform
+            platform.window.localStorage.setItem("gone_high_score", str(value))
+            return
         HIGHSCORE_FILE.write_text(json.dumps({"high_score": value}))
-    except OSError:
+    except Exception:
         pass
 
 
@@ -762,7 +774,7 @@ def make_icon():
     return icon
 
 
-def main():
+async def main():
     pygame.mixer.pre_init(44100, -16, 2, 512)
     pygame.init()
     pygame.display.set_caption(TITLE)
@@ -780,8 +792,9 @@ def main():
         game.update(dt)
         game.draw()
         pygame.display.flip()
+        await asyncio.sleep(0)  # hand control back to the browser each frame (pygbag)
     pygame.quit()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
