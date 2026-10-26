@@ -38,7 +38,8 @@ The game also works with the classic `pygame` package.
 | Key | Action |
 |---|---|
 | Arrow keys / WASD | Move |
-| SPACE | Drop a firewall behind you (3 per level) |
+| Click / tap a spot | G.One runs there along the shortest route |
+| SPACE, right click or tap on G.One | Drop a firewall behind you (3 per level) |
 | V | AI Vision on/off |
 | H | Switch Ra.One's search: A\* / Dijkstra / Greedy |
 | P or ESC | Pause |

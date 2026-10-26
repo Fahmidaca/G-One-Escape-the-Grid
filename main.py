@@ -13,7 +13,7 @@ import sys
 
 import pygame
 
-from astar import MODES, MODE_ORDER, manhattan
+from astar import MODES, MODE_ORDER, find_path, manhattan
 from effects import (Particles, Shake, TextRenderer, blit_glow, blur, glitch,
                      make_crt_overlay, make_vignette, scale_color)
 from entities import Player, RaOne
@@ -154,7 +154,10 @@ class Game:
         self.vision = False
         self.mode = "astar"
         self.held_dirs = []
-        self.mouse_down = False       # left button held: steer towards the cursor
+        self.mouse_down = False       # left button held: keep moving the target with the cursor
+        self.goal = None              # cell G.One is walking to after a click / tap
+        self.goal_key = None
+        self.goal_step = None
         self.high_score = load_high_score()
         self.new_record = False
         self.toast_text, self.toast_timer = "", 0.0
@@ -183,6 +186,7 @@ class Game:
         self.color = LEVEL_COLORS[(self.level - 1) % len(LEVEL_COLORS)]
         self.static_layer = render_static(self.world, self.color).convert()
         self.player = Player(self.world.player_start, PLAYER_SPEED)
+        self.goal = self.goal_key = None
         self.raone = RaOne(self.world.raone_start, raone_speed(self.level))
         self.cores_total = len(self.world.cores)
         self.charges = FIREWALL_CHARGES
@@ -250,6 +254,7 @@ class Game:
             return
         if k in KEY_DIRS:
             self.mouse_down = False   # the keyboard takes over steering
+            self.goal = None
             d = KEY_DIRS[k]
             if d in self.held_dirs:
                 self.held_dirs.remove(d)
@@ -293,22 +298,36 @@ class Game:
             elif k == pygame.K_ESCAPE:
                 self.to_menu()
 
-    def mouse_dirs(self, pos):
-        """Grid directions from G.One towards a screen point: the larger axis first,
-        then the other one as a fallback when the first is walled off."""
-        px, py = grid_px(self.player.pos())
-        dx, dy = pos[0] - px, pos[1] - py
-        if max(abs(dx), abs(dy)) < CELL / 2:
-            return []
-        h = (1 if dx > 0 else -1, 0)
-        v = (0, 1 if dy > 0 else -1)
-        dirs = [h, v] if abs(dx) > abs(dy) else [v, h]
-        if min(abs(dx), abs(dy)) < CELL / 2:
-            dirs.pop()
-        return dirs
+    def set_goal(self, pos):
+        """Make the open cell under (or nearest to) a screen point G.One's destination."""
+        gx, gy = (pos[0] - GRID_X) / CELL, (pos[1] - GRID_Y) / CELL
+        cx = min(COLS - 1, max(0, int(gx)))
+        cy = min(ROWS - 1, max(0, int(gy)))
+        options = [(cx + dx, cy + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)]
+        options = [c for c in options if self.world.passable(c)]
+        if options:
+            self.goal = min(options, key=lambda c: (c[0] + 0.5 - gx) ** 2 + (c[1] + 0.5 - gy) ** 2)
+
+    def goal_dir(self):
+        """Next step on the shortest route to the clicked / tapped cell, or None."""
+        if self.goal is None:
+            return None
+        if self.player.cell == self.goal:
+            if not self.mouse_down:
+                self.goal = None
+            return None
+        key = (self.player.cell, self.goal, len(self.world.firewalls))
+        if key != self.goal_key:
+            self.goal_key = key
+            path = find_path(self.player.cell, self.goal, self.world.passable).path
+            self.goal_step = None
+            if len(path) >= 2:
+                self.goal_step = (path[1][0] - path[0][0], path[1][1] - path[0][1])
+        return self.goal_step
 
     def handle_click(self, pos, button):
-        """Left click (or tap) starts / continues; in play, hold it to steer.
+        """Left click (or tap) starts / continues; in play, click or tap a spot and G.One
+        runs there along the shortest route (holding moves the target).
         Right click, or a tap on G.One, drops a firewall (phones have no right button)."""
         if self.state == "menu":
             if button == 1:
@@ -329,9 +348,10 @@ class Game:
                     self.drop_firewall()
                 elif button == 1:
                     self.mouse_down = True
-                    dirs = self.mouse_dirs(pos)
-                    if dirs:
-                        self.player.press(dirs[0])
+                    self.set_goal(pos)
+                    d = self.goal_dir()
+                    if d:
+                        self.player.press(d)   # turns around at once if the goal is behind
 
     # ------------------------------------------------------------ actions
     def drop_firewall(self):
@@ -395,6 +415,7 @@ class Game:
             self.sfx.play("gameover", 0.8)
             return
         self.player.reset(self.world.player_start)
+        self.goal = self.goal_key = None
         self.raone.reset(self.world.raone_start)
         self.raone.plan(self.world, self.player, self.mode, self.predicting)
         self.phase = "run"
@@ -443,8 +464,10 @@ class Game:
         self.world.update(dt)
         self.player.held = list(self.held_dirs)
         if self.mouse_down:
-            # held is tried last-first, so the preferred direction goes on the end
-            self.player.held.extend(reversed(self.mouse_dirs(pygame.mouse.get_pos())))
+            self.set_goal(pygame.mouse.get_pos())
+        d = self.goal_dir()
+        if d:
+            self.player.held.append(d)
         self.player.update(dt, self.world)
         if self.player.moving and random.random() < 0.8:
             self.particles.trail(grid_px(self.player.pos()), CYAN)
@@ -559,6 +582,9 @@ class Game:
         self.draw_firewalls(c)
         self.draw_portal(c)
         self.draw_cores(c)
+        if self.goal is not None:
+            r = 9 + 2 * math.sin(self.time * 10)
+            pygame.draw.circle(c, CYAN, [int(v) for v in cell_px(self.goal)], int(r), 2)
         self.particles.draw(c)
         self.draw_raone(c)
         self.draw_player(c)
@@ -827,7 +853,7 @@ class Game:
         if int(self.time * 2) % 2 == 0:
             t.draw(s, "PRESS ENTER OR TAP TO START", 24, WHITE, (110, 420), "midleft", glow=True)
 
-        rows = [("ARROWS / WASD", "Move  (or hold a finger / the mouse and point)"),
+        rows = [("ARROWS / WASD", "Move  (or click / tap where to go)"),
                 ("SPACE", "Drop a firewall behind you  (or tap G.One / right click)"),
                 ("V", "AI Vision: watch A* think" + ("   [ON]" if self.vision else "")),
                 ("H", "Switch A* / Dijkstra / Greedy"),
