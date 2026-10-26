@@ -23,6 +23,8 @@ def glow_sprite(radius, color, strength=1.0):
             k = (1 - i / steps) ** 2.2 * strength
             c = tuple(min(255, int(ch * k)) for ch in color)
             pygame.draw.circle(surf, c, (radius, radius), max(1, int(radius * i / steps)))
+        if pygame.display.get_surface():
+            surf = surf.convert()
         _glow_cache[key] = surf
     return surf
 

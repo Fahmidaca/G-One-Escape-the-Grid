@@ -126,19 +126,26 @@ def render_static(world, color):
 class Game:
     def __init__(self, screen):
         self.screen = screen
-        self.canvas = pygame.Surface((WIDTH, HEIGHT))
+        # Full-screen layers are converted to the display format once, so blitting
+        # them every frame is cheap (this matters a lot in the browser).
+        self.canvas = pygame.Surface((WIDTH, HEIGHT)).convert()
         self.text = TextRenderer()
         self.sfx = Sfx()
         self.particles = Particles()
         self.shake = Shake()
-        self.crt = make_crt_overlay((WIDTH, HEIGHT))
-        self.danger_overlay = make_vignette((WIDTH, HEIGHT), (255, 20, 60), 0.35, 1.3, 230)
-        self.vision_layer = pygame.Surface((COLS * CELL, ROWS * CELL), pygame.SRCALPHA)
-        self.shade = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        self.band = pygame.Surface((WIDTH, 176), pygame.SRCALPHA)
+        # The CRT scanlines are a full-screen alpha blit: skipped on the web to keep it fast.
+        self.crt = None if IS_WEB else make_crt_overlay((WIDTH, HEIGHT)).convert_alpha()
+        self.danger_overlay = make_vignette((WIDTH, HEIGHT), (255, 20, 60), 0.35, 1.3, 230).convert_alpha()
+        self.vision_layer = pygame.Surface((COLS * CELL, ROWS * CELL), pygame.SRCALPHA).convert_alpha()
+        self.vision_for = None        # the search result the vision layer was drawn for
+        self.vision_area = pygame.Rect(0, 0, 0, 0)
+        self.shade = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA).convert_alpha()
+        self.band = pygame.Surface((WIDTH, 176), pygame.SRCALPHA).convert_alpha()
         self.band.fill((3, 5, 14, 220))
-        self.flash_surf = pygame.Surface((WIDTH, HEIGHT))
+        self.flash_surf = pygame.Surface((WIDTH, HEIGHT)).convert()
         self.flash_surf.fill((255, 40, 70))
+        self.show_fps = False
+        self.fps = 0.0
 
         self.running = True
         self.state = "menu"           # menu, play, paused, gameover
@@ -156,7 +163,7 @@ class Game:
         self.beat_timer = 0.0
 
         self.menu_world = World(1)
-        self.menu_layer = render_static(self.menu_world, LEVEL_COLORS[0])
+        self.menu_layer = render_static(self.menu_world, LEVEL_COLORS[0]).convert()
         self.level, self.lives, self.score = 1, LIVES, 0
         self.color = LEVEL_COLORS[0]
         self.world = None
@@ -174,7 +181,7 @@ class Game:
     def start_level(self):
         self.world = World(self.level)
         self.color = LEVEL_COLORS[(self.level - 1) % len(LEVEL_COLORS)]
-        self.static_layer = render_static(self.world, self.color)
+        self.static_layer = render_static(self.world, self.color).convert()
         self.player = Player(self.world.player_start, PLAYER_SPEED)
         self.raone = RaOne(self.world.raone_start, raone_speed(self.level))
         self.cores_total = len(self.world.cores)
@@ -210,9 +217,10 @@ class Game:
             self.record_score()
             self.running = False
             return
-        if e.type == getattr(pygame, "WINDOWFOCUSLOST", -1):
-            self.held_dirs.clear()
-            self.mouse_down = False
+        if e.type in (getattr(pygame, "WINDOWFOCUSLOST", -1), getattr(pygame, "WINDOWLEAVE", -1)):
+            if e.type != getattr(pygame, "WINDOWLEAVE", -1):
+                self.held_dirs.clear()
+            self.mouse_down = False   # a button released outside the window never sends MOUSEBUTTONUP
             return
         if e.type == pygame.MOUSEBUTTONDOWN:
             self.handle_click(e.pos, e.button)
@@ -237,7 +245,11 @@ class Game:
             self.sfx.muted = not self.sfx.muted
             self.show_toast("SOUND OFF" if self.sfx.muted else "SOUND ON", 1.2)
             return
+        if k == pygame.K_f:
+            self.show_fps = not self.show_fps
+            return
         if k in KEY_DIRS:
+            self.mouse_down = False   # the keyboard takes over steering
             d = KEY_DIRS[k]
             if d in self.held_dirs:
                 self.held_dirs.remove(d)
@@ -489,16 +501,21 @@ class Game:
         s = self.screen
         if self.state == "menu":
             self.draw_menu(s)
-            s.blit(self.crt, (0, 0))
+            self.draw_overlay(s)
             return
 
-        c = self.canvas
-        self.draw_world(c)
-        if self.state == "play" and self.phase == "caught":
-            glitch(c, min(1.0, self.phase_timer / 1.2))
-        s.fill((0, 0, 0))
-        ox, oy = self.shake.offset()
-        s.blit(c, (int(ox), int(oy)))
+        ox, oy = (int(v) for v in self.shake.offset())
+        caught = self.state == "play" and self.phase == "caught"
+        if ox or oy or caught:
+            # shaking or glitching: draw off-screen first, then move it into place
+            c = self.canvas
+            self.draw_world(c)
+            if caught:
+                glitch(c, min(1.0, self.phase_timer / 1.2))
+            s.fill((0, 0, 0))
+            s.blit(c, (ox, oy))
+        else:
+            self.draw_world(s)   # the usual case: skip a full-screen copy
         self.draw_hud(s)
         self.draw_footer(s)
 
@@ -527,7 +544,13 @@ class Game:
             self.text.draw(s, "P, ESC or click to resume   |   Q to quit to menu", 16, DIM, (WIDTH // 2, HEIGHT // 2 + 40), kind="mono")
         elif self.state == "gameover":
             self.draw_game_over(s)
-        s.blit(self.crt, (0, 0))
+        self.draw_overlay(s)
+
+    def draw_overlay(self, s):
+        if self.crt:
+            s.blit(self.crt, (0, 0))
+        if self.show_fps:
+            self.text.draw(s, f"{self.fps:4.0f} FPS", 14, YELLOW, (WIDTH - 60, HEIGHT - 12), kind="mono")
 
     def draw_world(self, c):
         c.blit(self.static_layer, (0, 0))
@@ -545,14 +568,19 @@ class Game:
         if not res:
             return
         layer = self.vision_layer
-        layer.fill((0, 0, 0, 0))
-        n = max(1, len(res.explored) - 1)
-        for i, (x, y) in enumerate(res.explored):
-            a = int(26 + 72 * i / n)
-            pygame.draw.rect(layer, (255, 50, 90, a), (x * CELL + 3, y * CELL + 3, CELL - 6, CELL - 6), border_radius=4)
-        for x, y in res.frontier:
-            pygame.draw.rect(layer, (255, 190, 60, 210), (x * CELL + 7, y * CELL + 7, CELL - 14, CELL - 14), 2, border_radius=3)
-        c.blit(layer, (GRID_X, GRID_Y))
+        if self.vision_for is not res:
+            # Ra.One only searches again when it reaches a cell, so redraw the layer then, not every frame.
+            self.vision_for = res
+            layer.fill((0, 0, 0, 0))
+            n = max(1, len(res.explored) - 1)
+            for i, (x, y) in enumerate(res.explored):
+                a = int(26 + 72 * i / n)
+                pygame.draw.rect(layer, (255, 50, 90, a), (x * CELL + 3, y * CELL + 3, CELL - 6, CELL - 6), border_radius=4)
+            for x, y in res.frontier:
+                pygame.draw.rect(layer, (255, 190, 60, 210), (x * CELL + 7, y * CELL + 7, CELL - 14, CELL - 14), 2, border_radius=3)
+            self.vision_area = layer.get_bounding_rect()
+        area = self.vision_area
+        c.blit(layer, (GRID_X + area.x, GRID_Y + area.y), area)
 
         if len(res.path) >= 2:
             pts = [grid_px(self.raone.pos())] + [cell_px(p) for p in res.path[1:]]
@@ -839,7 +867,10 @@ async def main():
     game = Game(screen)
     clock = pygame.time.Clock()
     while game.running:
-        dt = min(clock.tick(FPS) / 1000.0, 1 / 20)
+        # Cap a slow frame at 1/15 s: lower would put the game in slow motion on weak devices,
+        # higher would let G.One and Ra.One pass through each other between checks.
+        dt = min(clock.tick(FPS) / 1000.0, 1 / 15)
+        game.fps = clock.get_fps()
         for event in pygame.event.get():
             game.handle_event(event)
         game.update(dt)
