@@ -281,15 +281,19 @@ class Game:
             elif k == pygame.K_ESCAPE:
                 self.to_menu()
 
-    def mouse_dir(self, pos):
-        """Grid direction from G.One towards a screen point (the larger axis wins)."""
+    def mouse_dirs(self, pos):
+        """Grid directions from G.One towards a screen point: the larger axis first,
+        then the other one as a fallback when the first is walled off."""
         px, py = grid_px(self.player.pos())
         dx, dy = pos[0] - px, pos[1] - py
         if max(abs(dx), abs(dy)) < CELL / 2:
-            return None
-        if abs(dx) > abs(dy):
-            return (1 if dx > 0 else -1, 0)
-        return (0, 1 if dy > 0 else -1)
+            return []
+        h = (1 if dx > 0 else -1, 0)
+        v = (0, 1 if dy > 0 else -1)
+        dirs = [h, v] if abs(dx) > abs(dy) else [v, h]
+        if min(abs(dx), abs(dy)) < CELL / 2:
+            dirs.pop()
+        return dirs
 
     def handle_click(self, pos, button):
         """Left click (or tap) starts / continues; in play, hold it to steer.
@@ -313,9 +317,9 @@ class Game:
                     self.drop_firewall()
                 elif button == 1:
                     self.mouse_down = True
-                    d = self.mouse_dir(pos)
-                    if d:
-                        self.player.press(d)
+                    dirs = self.mouse_dirs(pos)
+                    if dirs:
+                        self.player.press(dirs[0])
 
     # ------------------------------------------------------------ actions
     def drop_firewall(self):
@@ -427,9 +431,8 @@ class Game:
         self.world.update(dt)
         self.player.held = list(self.held_dirs)
         if self.mouse_down:
-            d = self.mouse_dir(pygame.mouse.get_pos())
-            if d:
-                self.player.held.append(d)
+            # held is tried last-first, so the preferred direction goes on the end
+            self.player.held.extend(reversed(self.mouse_dirs(pygame.mouse.get_pos())))
         self.player.update(dt, self.world)
         if self.player.moving and random.random() < 0.8:
             self.particles.trail(grid_px(self.player.pos()), CYAN)
