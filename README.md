@@ -4,6 +4,8 @@ A neon maze-chase game inspired by the film *Ra.One*, built with **Python** and 
 You are G.One, trapped inside a digital city. Ra.One has escaped the game and hunts you
 through the maze using **A\* search**. Collect every energy core, then reach the exit portal.
 
+### ▶ [Play it in your browser](https://fahmidaca.github.io/G-One-Escape-the-Grid/), on a computer or a phone (turn the phone sideways)
+
 ![Gameplay with AI Vision on](screenshots/gameplay.gif)
 
 ## Features

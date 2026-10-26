@@ -292,7 +292,8 @@ class Game:
         return (0, 1 if dy > 0 else -1)
 
     def handle_click(self, pos, button):
-        """Left click starts / continues; in play, hold it to steer. Right click drops a firewall."""
+        """Left click (or tap) starts / continues; in play, hold it to steer.
+        Right click, or a tap on G.One, drops a firewall (phones have no right button)."""
         if self.state == "menu":
             if button == 1:
                 self.sfx.play("select")
@@ -307,7 +308,8 @@ class Game:
             if self.phase == "intro":
                 self.phase_timer = 0
             elif self.phase == "run":
-                if button == 3:
+                px, py = grid_px(self.player.pos())
+                if button == 3 or (button == 1 and math.hypot(pos[0] - px, pos[1] - py) < CELL):
                     self.drop_firewall()
                 elif button == 1:
                     self.mouse_down = True
@@ -792,10 +794,10 @@ class Game:
         t.draw(s, "Ra.One has escaped the game. It hunts you with A* search.", 17, WHITE, (112, 330), "midleft")
         t.draw(s, "Collect every energy core, then reach the exit portal.", 17, DIM, (112, 358), "midleft")
         if int(self.time * 2) % 2 == 0:
-            t.draw(s, "PRESS ENTER OR CLICK TO START", 24, WHITE, (110, 420), "midleft", glow=True)
+            t.draw(s, "PRESS ENTER OR TAP TO START", 24, WHITE, (110, 420), "midleft", glow=True)
 
-        rows = [("ARROWS / WASD", "Move  (or hold the mouse button and point)"),
-                ("SPACE", "Drop a firewall behind you  (or right click)"),
+        rows = [("ARROWS / WASD", "Move  (or hold a finger / the mouse and point)"),
+                ("SPACE", "Drop a firewall behind you  (or tap G.One / right click)"),
                 ("V", "AI Vision: watch A* think" + ("   [ON]" if self.vision else "")),
                 ("H", "Switch A* / Dijkstra / Greedy"),
                 ("P / ESC", "Pause"),
