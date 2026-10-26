@@ -831,6 +831,8 @@ async def main():
     pygame.display.set_caption(TITLE)
     pygame.display.set_icon(make_icon())
     try:
+        if IS_WEB:
+            raise pygame.error  # the web page scales the canvas itself
         screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED | pygame.RESIZABLE)
     except pygame.error:
         screen = pygame.display.set_mode((WIDTH, HEIGHT))
