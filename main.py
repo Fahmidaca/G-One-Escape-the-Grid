@@ -147,6 +147,7 @@ class Game:
         self.vision = False
         self.mode = "astar"
         self.held_dirs = []
+        self.mouse_down = False       # left button held: steer towards the cursor
         self.high_score = load_high_score()
         self.new_record = False
         self.toast_text, self.toast_timer = "", 0.0
@@ -211,6 +212,13 @@ class Game:
             return
         if e.type == getattr(pygame, "WINDOWFOCUSLOST", -1):
             self.held_dirs.clear()
+            self.mouse_down = False
+            return
+        if e.type == pygame.MOUSEBUTTONDOWN:
+            self.handle_click(e.pos, e.button)
+            return
+        if e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+            self.mouse_down = False
             return
         if e.type == pygame.KEYUP and e.key in KEY_DIRS:
             d = KEY_DIRS[e.key]
@@ -272,6 +280,40 @@ class Game:
                 self.new_game()
             elif k == pygame.K_ESCAPE:
                 self.to_menu()
+
+    def mouse_dir(self, pos):
+        """Grid direction from G.One towards a screen point (the larger axis wins)."""
+        px, py = grid_px(self.player.pos())
+        dx, dy = pos[0] - px, pos[1] - py
+        if max(abs(dx), abs(dy)) < CELL / 2:
+            return None
+        if abs(dx) > abs(dy):
+            return (1 if dx > 0 else -1, 0)
+        return (0, 1 if dy > 0 else -1)
+
+    def handle_click(self, pos, button):
+        """Left click starts / continues; in play, hold it to steer. Right click drops a firewall."""
+        if self.state == "menu":
+            if button == 1:
+                self.sfx.play("select")
+                self.new_game()
+        elif self.state == "paused":
+            self.state = "play"
+        elif self.state == "gameover":
+            if button == 1:
+                self.sfx.play("select")
+                self.new_game()
+        elif self.state == "play":
+            if self.phase == "intro":
+                self.phase_timer = 0
+            elif self.phase == "run":
+                if button == 3:
+                    self.drop_firewall()
+                elif button == 1:
+                    self.mouse_down = True
+                    d = self.mouse_dir(pos)
+                    if d:
+                        self.player.press(d)
 
     # ------------------------------------------------------------ actions
     def drop_firewall(self):
@@ -382,6 +424,10 @@ class Game:
         self.level_time += dt
         self.world.update(dt)
         self.player.held = list(self.held_dirs)
+        if self.mouse_down:
+            d = self.mouse_dir(pygame.mouse.get_pos())
+            if d:
+                self.player.held.append(d)
         self.player.update(dt, self.world)
         if self.player.moving and random.random() < 0.8:
             self.particles.trail(grid_px(self.player.pos()), CYAN)
@@ -473,7 +519,7 @@ class Game:
             self.shade.fill((2, 3, 10, 170))
             s.blit(self.shade, (0, 0))
             self.text.draw(s, "PAUSED", 64, WHITE, (WIDTH // 2, HEIGHT // 2 - 30), glow=True, kind="display")
-            self.text.draw(s, "P or ESC to resume   |   Q to quit to menu", 16, DIM, (WIDTH // 2, HEIGHT // 2 + 40), kind="mono")
+            self.text.draw(s, "P, ESC or click to resume   |   Q to quit to menu", 16, DIM, (WIDTH // 2, HEIGHT // 2 + 40), kind="mono")
         elif self.state == "gameover":
             self.draw_game_over(s)
         s.blit(self.crt, (0, 0))
@@ -713,7 +759,7 @@ class Game:
             self.text.draw(s, "NEW HIGH SCORE!", 20, YELLOW, (WIDTH // 2, HEIGHT // 2 + 70), glow=True)
         else:
             self.text.draw(s, f"BEST {self.high_score:07d}", 18, DIM, (WIDTH // 2, HEIGHT // 2 + 70), kind="mono")
-        self.text.draw(s, "ENTER play again   |   ESC menu", 16, DIM, (WIDTH // 2, HEIGHT // 2 + 120), kind="mono")
+        self.text.draw(s, "ENTER or click to play again   |   ESC menu", 16, DIM, (WIDTH // 2, HEIGHT // 2 + 120), kind="mono")
 
     def draw_menu(self, s):
         t = self.text
@@ -746,10 +792,10 @@ class Game:
         t.draw(s, "Ra.One has escaped the game. It hunts you with A* search.", 17, WHITE, (112, 330), "midleft")
         t.draw(s, "Collect every energy core, then reach the exit portal.", 17, DIM, (112, 358), "midleft")
         if int(self.time * 2) % 2 == 0:
-            t.draw(s, "PRESS ENTER TO START", 24, WHITE, (110, 420), "midleft", glow=True)
+            t.draw(s, "PRESS ENTER OR CLICK TO START", 24, WHITE, (110, 420), "midleft", glow=True)
 
-        rows = [("ARROWS / WASD", "Move"),
-                ("SPACE", "Drop a firewall behind you"),
+        rows = [("ARROWS / WASD", "Move  (or hold the mouse button and point)"),
+                ("SPACE", "Drop a firewall behind you  (or right click)"),
                 ("V", "AI Vision: watch A* think" + ("   [ON]" if self.vision else "")),
                 ("H", "Switch A* / Dijkstra / Greedy"),
                 ("P / ESC", "Pause"),

@@ -1,4 +1,6 @@
 """Game-wide settings: window, grid, colours and difficulty."""
+import os
+import sys
 from pathlib import Path
 
 TITLE = "G.ONE: Escape the Grid"
@@ -17,6 +19,10 @@ FONT_DISPLAY = ASSETS / "fonts" / "Orbitron-Black.ttf"
 FONT_UI = ASSETS / "fonts" / "Orbitron-Bold.ttf"
 FONT_MONO = ASSETS / "fonts" / "ShareTechMono-Regular.ttf"
 HIGHSCORE_FILE = Path(__file__).with_name("highscore.json")
+if getattr(sys, "frozen", False):
+    # Packaged .exe: its own folder is temporary, so keep the score in the user's AppData.
+    HIGHSCORE_FILE = Path(os.environ.get("APPDATA", Path.home())) / "G-One" / "highscore.json"
+    HIGHSCORE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Colours
 BG = (4, 6, 16)
