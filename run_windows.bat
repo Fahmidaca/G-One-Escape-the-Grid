@@ -1,0 +1,6 @@
+@echo off
+echo Installing Pygame (first run only)...
+python -m pip install --quiet pygame-ce
+echo Starting G.ONE...
+python main.py
+if errorlevel 1 pause
