@@ -148,7 +148,7 @@ config = {
     _sdl2 : "canvas",
     user_canvas : 0,
     user_canvas_managed : 0,
-    gui_divider : 2,
+    gui_divider : 1,
     ume_block : 1,
     can_close : 0,
     archive : "g-one",
@@ -178,7 +178,7 @@ function show_infobox() {
 
 </script>
 
-    <title>g-one</title>
+    <title>G.ONE: Escape the Grid</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -286,6 +286,15 @@ function show_infobox() {
 
     <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
 
+<style>
+  /* keep the game 16:9 and as large as the window allows */
+  body { background-color: #04060e !important; }
+  canvas.emscripten {
+    width: min(100vw, calc(100vh * 16 / 9)) !important;
+    height: min(100vh, calc(100vw * 9 / 16)) !important;
+    margin: auto !important;
+  }
+</style>
 </head>
 
 <body>
