@@ -13,6 +13,7 @@ import sys
 
 import pygame
 
+import autopilot
 from astar import MODES, MODE_ORDER, find_path, manhattan
 from effects import (Particles, Shake, TextRenderer, blit_glow, blur, glitch,
                      make_crt_overlay, make_vignette, scale_color)
@@ -158,6 +159,10 @@ class Game:
         self.goal = None              # cell G.One is walking to after a click / tap
         self.goal_key = None
         self.goal_step = None
+        self.autopilot = False        # G.One plays by itself when no key / click is steering
+        self.auto_key = None
+        self.auto_step = None
+        self.auto_button = pygame.Rect(WIDTH - GRID_X - 124, GRID_BOTTOM + 6, 124, 26)
         self.high_score = load_high_score()
         self.new_record = False
         self.toast_text, self.toast_timer = "", 0.0
@@ -252,6 +257,9 @@ class Game:
         if k == pygame.K_f:
             self.show_fps = not self.show_fps
             return
+        if k == pygame.K_g:
+            self.toggle_autopilot()
+            return
         if k in KEY_DIRS:
             self.mouse_down = False   # the keyboard takes over steering
             self.goal = None
@@ -298,6 +306,24 @@ class Game:
             elif k == pygame.K_ESCAPE:
                 self.to_menu()
 
+    def toggle_autopilot(self):
+        self.autopilot = not self.autopilot
+        self.auto_key = None
+        self.sfx.play("select")
+        self.show_toast("AUTO-PILOT ON  |  keys or a click take over any time" if self.autopilot
+                        else "AUTO-PILOT OFF", 1.8)
+
+    def autopilot_dir(self):
+        """Ask the auto-pilot for G.One's next step; it only re-plans when something moved."""
+        w = self.world
+        key = (self.player.cell, self.raone.cell, len(w.cores), self.portal_open, len(w.firewalls))
+        if key != self.auto_key:
+            self.auto_key = key
+            self.auto_step, want_wall = autopilot.plan(w, self.player.cell, self.raone.cell, self.portal_open)
+            if want_wall and self.charges > 0 and self.player.moving:
+                self.drop_firewall()
+        return self.auto_step
+
     def set_goal(self, pos):
         """Make the open cell under (or nearest to) a screen point G.One's destination."""
         gx, gy = (pos[0] - GRID_X) / CELL, (pos[1] - GRID_Y) / CELL
@@ -329,6 +355,9 @@ class Game:
         """Left click (or tap) starts / continues; in play, click or tap a spot and G.One
         runs there along the shortest route (holding moves the target).
         Right click, or a tap on G.One, drops a firewall (phones have no right button)."""
+        if self.state == "play" and button == 1 and self.auto_button.collidepoint(pos):
+            self.toggle_autopilot()
+            return
         if self.state == "menu":
             if button == 1:
                 self.sfx.play("select")
@@ -468,6 +497,10 @@ class Game:
         d = self.goal_dir()
         if d:
             self.player.held.append(d)
+        elif self.autopilot and not self.held_dirs:
+            d = self.autopilot_dir()
+            if d:
+                self.player.held.append(d)
         self.player.update(dt, self.world)
         if self.player.moving and random.random() < 0.8:
             self.particles.trail(grid_px(self.player.pos()), CYAN)
@@ -793,10 +826,17 @@ class Game:
             self.text.draw(s, "path", 13, DIM, (x + 20, y), "midleft", kind="mono")
             info = (f"AI VISION   {MODES[self.mode][0]}   explored {len(res.explored)}   open {len(res.frontier)}"
                     f"   path {max(0, len(res.path) - 1)}   {res.time_ms:.2f} ms   target {self.raone.goal_mode}")
-            self.text.draw(s, info, 15, (255, 125, 145), (WIDTH - GRID_X, y), "midright", kind="mono")
+            self.text.draw(s, info, 15, (255, 125, 145), (self.auto_button.x - 14, y), "midright", kind="mono")
         else:
-            hint = "ARROWS/WASD move    SPACE firewall    V AI vision    H search type    P pause    M mute    F11 fullscreen"
-            self.text.draw(s, hint, 14, DIM, (WIDTH // 2, y), kind="mono")
+            hint = "ARROWS/WASD move   G auto-pilot   SPACE firewall   V AI vision   H search   P pause   M mute"
+            self.text.draw(s, hint, 14, DIM, ((GRID_X + self.auto_button.x) // 2, y), kind="mono")
+
+        # Auto-pilot button (a key-free toggle for phones)
+        b = self.auto_button
+        on = self.autopilot
+        pygame.draw.rect(s, (8, 40, 30) if on else (12, 22, 44), b, border_radius=5)
+        pygame.draw.rect(s, (60, 255, 170) if on else (40, 90, 130), b, 1, border_radius=5)
+        self.text.draw(s, "AUTO: ON" if on else "AUTO: OFF", 14, (60, 255, 170) if on else CYAN, b.center, kind="mono")
 
     def draw_banner(self, s, title, subtitle, small, color):
         y0 = HEIGHT // 2 - 88
@@ -855,6 +895,7 @@ class Game:
 
         rows = [("ARROWS / WASD", "Move  (or click / tap where to go)"),
                 ("SPACE", "Drop a firewall behind you  (or tap G.One / right click)"),
+                ("G", "Auto-pilot: G.One plays by itself  (keys / clicks still take over)"),
                 ("V", "AI Vision: watch A* think" + ("   [ON]" if self.vision else "")),
                 ("H", "Switch A* / Dijkstra / Greedy"),
                 ("P / ESC", "Pause"),

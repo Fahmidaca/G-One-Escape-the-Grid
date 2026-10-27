@@ -39,6 +39,7 @@ The game also works with the classic `pygame` package.
 |---|---|
 | Arrow keys / WASD | Move |
 | Click / tap a spot | G.One runs there along the shortest route |
+| G or the AUTO button | Auto-pilot: G.One plays by itself (keys and clicks still take over) |
 | SPACE, right click or tap on G.One | Drop a firewall behind you (3 per level) |
 | V | AI Vision on/off |
 | H | Switch Ra.One's search: A\* / Dijkstra / Greedy |
@@ -86,6 +87,7 @@ A\* finds the same shortest path as Dijkstra while exploring about half as many 
 ```
 main.py       game loop, screens, HUD, drawing, AI Vision
 astar.py      A*, Dijkstra and Greedy search (runs on its own as a demo)
+autopilot.py  G.One's auto-pilot: nearest core by BFS, runs from Ra.One using a danger map
 entities.py   G.One (player) and Ra.One (the A* hunter)
 world.py      maze generation (recursive backtracker), cores, portal, firewalls
 effects.py    glow, particles, screen shake, CRT overlay, glitch, glowing text
